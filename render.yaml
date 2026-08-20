@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: audio-anomaly-detection
+    runtime: python
+    rootDir: CODE
+    plan: free # bump to "starter" (or higher) if the free 512MB instance OOMs loading TensorFlow + YAMNet
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
