@@ -1,41 +1,115 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Charts - FanSound AI</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
+{% extends "base.html" %}
+{% block title %}Charts · FanSound AI{% endblock %}
 
-<body>
+{% block content %}
+<div class="fs-page">
+  <div class="fs-eyebrow mb-1">📊 Model insight</div>
+  <h2 class="mb-1">How the model performs, explained</h2>
+  <p style="color: var(--ink-soft);" class="mb-4">
+    This page walks through what the model does and how to read each chart below,
+    written so anyone (not just an ML engineer) can follow it.
+  </p>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">FanSound AI</a>
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Home</a>
-      <a class="nav-link" href="/predict">Predict</a>
-      <a class="nav-link" href="/predict">Result</a>
-      <a class="nav-link text-danger" href="/logout">Logout</a>
-    </div>
+  <div class="fs-card p-4 mb-4">
+    <h3 style="font-size:1.05rem; font-weight:700; margin-bottom:0.5rem;">🧠 How the detector works</h3>
+    <p style="color: var(--ink-soft); font-size:0.92rem; margin-bottom:0.5rem;">
+      Each audio clip is first passed through <strong>YAMNet</strong>, a sound-recognition network
+      pretrained by Google on millions of everyday sounds. YAMNet turns the clip into a sequence
+      of numeric "fingerprints" that describe what the sound contains.
+    </p>
+    <p style="color: var(--ink-soft); font-size:0.92rem; margin-bottom:0;">
+      That sequence is then fed into a <strong>GRU</strong> (a type of recurrent neural network
+      that is good at learning patterns over time). It was trained on labeled machine recordings
+      to tell healthy machine sound apart from abnormal machine sound, and it outputs a single
+      probability from 0 to 1: how likely the clip is abnormal.
+    </p>
   </div>
-</nav>
 
-<div class="container mt-4">
-    <h2>Model Performance Charts</h2>
-
-    <div class="row mt-4">
-        {% if charts %}
-            {% for img in charts %}
-                <div class="col-md-6 mb-4">
-                    <div class="card">
-                        <img src="/static/charts/{{ img }}" class="card-img-top">
-                    </div>
-                </div>
-            {% endfor %}
-        {% else %}
-            <p>No charts available. Please add PNG images to static/charts/ folder.</p>
-        {% endif %}
+  {% if charts %}
+    <div class="fs-stat-row">
+      <div class="fs-stat-tile"><strong>71.8%</strong><span>Overall accuracy</span></div>
+      <div class="fs-stat-tile"><strong>0.769</strong><span>ROC AUC</span></div>
+      <div class="fs-stat-tile"><strong>63.4%</strong><span>Catches real faults</span></div>
+      <div class="fs-stat-tile"><strong>74.9%</strong><span>Clears real normals</span></div>
     </div>
-</div>
 
-</body>
-</html>
+    {% for img in charts %}
+      {% set stem = img.rsplit('.', 1)[0] | lower %}
+      <div class="fs-explain-card">
+        <img src="{{ url_for('send_chart', filename=img) }}" alt="{{ img }}" loading="lazy">
+        <div class="fs-explain-body">
+          {% if 'accuracy' in stem %}
+            <span class="fs-how-label">📈 Training accuracy</span>
+            <h3>Is the model actually learning?</h3>
+            <p><strong>What it shows:</strong> two lines tracking how often the model's Normal/Abnormal
+              call matched the true label, epoch by epoch. The blue line is performance on the data it
+              trained on; the orange line is performance on data it never saw during training.</p>
+            <p><strong>How to read it:</strong> both lines climbing and settling near the top means the
+              model is genuinely learning the difference, not just guessing. If the orange (validation)
+              line stayed flat while blue kept climbing, that would mean the model was memorizing
+              instead of learning.</p>
+            <p><strong>What happened here:</strong> training accuracy rises steadily to about
+              <strong>80%</strong>, and validation accuracy rises to around <strong>72&ndash;74%</strong>
+              before leveling off. The gap between the two lines is expected and modest, so the model
+              generalizes reasonably well to audio it hasn't seen before.</p>
+
+          {% elif 'loss' in stem %}
+            <span class="fs-how-label">📉 Training loss</span>
+            <h3>How confident and correct are the predictions?</h3>
+            <p><strong>What it shows:</strong> "loss" is a penalty score, lower is better. It punishes
+              the model more when it is confidently wrong, and less when it is close to correct. Same
+              two lines as the accuracy chart: training (blue) versus unseen validation data (orange).</p>
+            <p><strong>How to read it:</strong> a steady downward trend means the model keeps improving.
+              Bumps in the orange line are normal (real-world audio is noisy); a sustained upward trend
+              while blue keeps dropping would be a sign of overfitting.</p>
+            <p><strong>What happened here:</strong> training loss falls steadily to about
+              <strong>0.42</strong>. Validation loss trends down overall but wobbles around epochs
+              5 and 10&ndash;12, a mild, expected amount of noise for a dataset this size rather than a
+              sign the model broke.</p>
+
+          {% elif 'roc' in stem %}
+            <span class="fs-how-label">🎯 ROC curve</span>
+            <h3>How well can it tell normal from abnormal?</h3>
+            <p><strong>What it shows:</strong> the model doesn't just output "Normal" or "Abnormal", it
+              outputs a probability, and a threshold decides the cutoff. This curve plots, at every
+              possible cutoff, how many real faults get caught (vertical axis) against how many false
+              alarms that costs (horizontal axis).</p>
+            <p><strong>How to read it:</strong> a curve that hugs the top-left corner is ideal (catches
+              faults with almost no false alarms). The dashed diagonal line is what pure random guessing
+              would look like. <strong>AUC</strong> (area under the curve) compresses the whole curve into
+              one number from 0.5 (random) to 1.0 (perfect).</p>
+            <p><strong>What happened here:</strong> AUC = <strong>0.769</strong>, meaning that given one
+              random normal clip and one random abnormal clip, the model ranks the abnormal one as
+              riskier about 77% of the time, a solidly-better-than-random detector with clear room
+              to improve.</p>
+
+          {% elif 'confusion' in stem %}
+            <span class="fs-how-label">🧮 Confusion matrix</span>
+            <h3>What actually happened on real test clips?</h3>
+            <p><strong>What it shows:</strong> a scoreboard of every prediction the model made on
+              837 held-out test clips at the app's current decision threshold (0.45), split by what
+              the clip really was (rows) versus what the model guessed (columns).</p>
+            <p><strong>How to read it:</strong> the top-left and bottom-right cells are correct calls;
+              the top-right and bottom-left cells are mistakes. Bright/yellow means a large count.</p>
+            <p><strong>What happened here:</strong> of 613 truly normal clips, <strong>459</strong> were
+              correctly cleared and <strong>154</strong> triggered a false alarm. Of 224 truly abnormal
+              clips, <strong>142</strong> were correctly caught and <strong>82</strong> slipped through
+              undetected. In plain terms: the model currently catches about <strong>6 in 10</strong> real
+              faults, and correctly clears about <strong>3 in 4</strong> healthy machines, useful as an
+              early-warning aid, not yet a replacement for human inspection.</p>
+
+          {% else %}
+            <span class="fs-how-label">📊 Chart</span>
+            <h3>{{ img.rsplit('.', 1)[0] | replace('_', ' ') }}</h3>
+            <p>Additional evaluation chart generated for this model.</p>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="fs-card p-4 text-center" style="color: var(--ink-soft);">
+      No charts available. Add PNG images to <code>static/charts/</code>.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

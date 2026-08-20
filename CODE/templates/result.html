@@ -1,35 +1,46 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Result - FanSound AI</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
+{% extends "base.html" %}
+{% block title %}Result · FanSound AI{% endblock %}
 
-<body>
+{% block content %}
+<div class="fs-page" style="max-width: 640px;">
+  <div class="fs-card fs-result-card">
+    <div class="fs-eyebrow mb-2">🎧 Prediction result</div>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">FanSound AI</a>
-    <div class="navbar-nav">
-      <a class="nav-link" href="/">Home</a>
-      <a class="nav-link" href="/charts">Charts</a>
-      <a class="nav-link" href="/predict">Predict</a>
-      <a class="nav-link text-danger" href="/logout">Logout</a>
+    <div class="fs-result-badge {{ 'abnormal' if label == 'Abnormal' else 'normal' }}">
+      {{ '🚨' if label == 'Abnormal' else '✅' }} {{ label }}
     </div>
+
+    <div class="fs-wave" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span>
+    </div>
+
+    <div class="fs-gauge-wrap">
+      <div class="fs-gauge-track">
+        <div class="fs-gauge-fill" style="width: {{ (prob * 100) | round(1) }}%;"></div>
+      </div>
+      <div class="fs-gauge-labels">
+        <span>Normal</span>
+        <span>Abnormal</span>
+      </div>
+    </div>
+
+    <div class="fs-result-meta">
+      <div>
+        <strong>{{ (prob * 100) | round(1) }}%</strong>
+        <span>Abnormal probability</span>
+      </div>
+      <div>
+        <strong>{{ threshold }}</strong>
+        <span>Decision threshold</span>
+      </div>
+      <div>
+        <strong style="word-break: break-all;">{{ filename }}</strong>
+        <span>File analyzed</span>
+      </div>
+    </div>
+
+    <a href="{{ url_for('predict') }}" class="btn fs-btn-grad mt-4">🎙️ Predict Another</a>
   </div>
-</nav>
-
-<div class="container mt-4">
-    <h2>Prediction Result</h2>
-
-    <div class="card mt-3 p-3">
-        <h4>Prediction: <span class="text-primary">{{ label }}</span></h4>
-        <p><strong>Abnormal Probability:</strong> {{ prob }}</p>
-        <p><strong>Threshold Used:</strong> {{ threshold }}</p>
-    </div>
-
-    <a href="/predict" class="btn btn-success mt-3">Predict Another</a>
 </div>
-
-</body>
-</html>
+{% endblock %}

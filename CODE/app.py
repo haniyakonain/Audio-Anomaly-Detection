@@ -1,9 +1,9 @@
 # app.py
-import os
-import io
-import shutil
 from pathlib import Path
-from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory, flash
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    send_from_directory, flash, abort
+)
 from werkzeug.utils import secure_filename
 
 import numpy as np
@@ -18,6 +18,7 @@ APP_ROOT = Path(__file__).parent.resolve()
 MODEL_DIR = APP_ROOT / "model"
 UPLOAD_DIR = APP_ROOT / "uploads"
 STATIC_CHARTS = APP_ROOT / "static" / "charts"
+SAMPLE_DIR = APP_ROOT / "fan_split_dataset" / "test"
 
 MODEL_FILE = MODEL_DIR / "yamnet_gru_smote_tuned.keras"
 THRESH_FILE = MODEL_DIR / "best_threshold.txt"
@@ -25,6 +26,7 @@ THRESH_FILE = MODEL_DIR / "best_threshold.txt"
 ALLOWED_EXT = {".wav", ".flac", ".ogg", ".mp3"}
 MAX_SEQ = 100   # must match training
 TARGET_SR = 16000
+SAMPLES_PER_GROUP = 8  # cap how many sample files we surface per machine/class
 
 # create directories if missing
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,10 +37,7 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 # Flask app init
 # -----------------------------
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.secret_key = "replace_this_with_a_random_secret"
-
-# Temporary in-memory user store (no DB)
-_users = {}
+app.secret_key = "replace_this_with_a_random_secret"  # only needed for flash()
 
 # -----------------------------
 # Load ML assets at startup
@@ -111,50 +110,73 @@ def extract_features_from_path(filepath):
     emb_pad = pad_sequence(emb, max_len=MAX_SEQ) # (MAX_SEQ, 1024)
     return np.expand_dims(emb_pad, axis=0)       # (1, MAX_SEQ, 1024)
 
+def list_sample_audio():
+    """Group demo audio files bundled in fan_split_dataset/test by machine id + class.
+
+    Returns a list of {id, label, files: [{name, relpath}], total} dicts,
+    capped to SAMPLES_PER_GROUP files per group so the library stays browsable.
+    """
+    groups = []
+    if not SAMPLE_DIR.exists():
+        return groups
+
+    for machine_dir in sorted(SAMPLE_DIR.iterdir()):
+        if not machine_dir.is_dir():
+            continue
+        for label_dir in sorted(machine_dir.iterdir()):
+            if not label_dir.is_dir():
+                continue
+            wavs = sorted(
+                f for f in label_dir.iterdir()
+                if f.suffix.lower() in ALLOWED_EXT
+            )
+            if not wavs:
+                continue
+            shown = wavs[:SAMPLES_PER_GROUP]
+            groups.append({
+                "machine_id": machine_dir.name,
+                "label": label_dir.name,  # "normal" / "abnormal"
+                "total": len(wavs),
+                "files": [
+                    {
+                        "name": f.name,
+                        "relpath": f.relative_to(SAMPLE_DIR).as_posix(),
+                    }
+                    for f in shown
+                ],
+            })
+    return groups
+
+def resolve_sample_path(relpath):
+    """Safely resolve a relpath (as handed back to the client) inside SAMPLE_DIR."""
+    candidate = (SAMPLE_DIR / relpath).resolve()
+    sample_root = SAMPLE_DIR.resolve()
+    if sample_root not in candidate.parents and candidate != sample_root:
+        return None
+    if not candidate.is_file():
+        return None
+    return candidate
+
+def run_prediction(filepath, display_name):
+    """Shared prediction path for both uploads and sample-library picks."""
+    if model is None:
+        return None, "Model is not loaded. Please place the model in model/ folder."
+    try:
+        X = extract_features_from_path(filepath)
+        prob = float(model.predict(X, verbose=0).ravel()[0])
+        label = "Abnormal" if prob >= best_threshold else "Normal"
+        return {"filename": display_name, "prob": prob, "label": label,
+                "threshold": best_threshold}, None
+    except Exception as e:
+        app.logger.exception("Prediction error")
+        return None, f"Error during prediction: {e}"
+
 # -----------------------------
-# Routes: Home / Auth / Pages
+# Routes: Home / Pages
 # -----------------------------
 @app.route("/")
 def index():
     return render_template("index.html")
-
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        uname = request.form.get("username", "").strip()
-        pwd = request.form.get("password", "").strip()
-        if not uname or not pwd:
-            flash("Username and password required.", "warning")
-            return redirect(url_for("register"))
-        if uname in _users:
-            flash("User already exists. Choose another username.", "danger")
-            return redirect(url_for("register"))
-        _users[uname] = pwd
-        flash("Registration successful. Please login.", "success")
-        return redirect(url_for("login"))
-    return render_template("register.html")
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        uname = request.form.get("username", "").strip()
-        pwd = request.form.get("password", "").strip()
-        if uname in _users and _users[uname] == pwd:
-            session["user"] = uname
-            flash(f"Welcome, {uname}!", "success")
-            return redirect(url_for("predict"))
-        flash("Invalid credentials.", "danger")
-        return redirect(url_for("login"))
-    return render_template("login.html")
-
-
-@app.route("/logout")
-def logout():
-    session.pop("user", None)
-    flash("Logged out.", "info")
-    return redirect(url_for("index"))
 
 
 # -----------------------------
@@ -162,11 +184,22 @@ def logout():
 # -----------------------------
 @app.route("/predict", methods=["GET", "POST"])
 def predict():
-    if "user" not in session:
-        flash("Please log in to use prediction.", "warning")
-        return redirect(url_for("login"))
-
     if request.method == "POST":
+        sample_relpath = request.form.get("sample_path", "").strip()
+
+        # Option 1: user picked a file from the bundled sample library
+        if sample_relpath:
+            filepath = resolve_sample_path(sample_relpath)
+            if filepath is None:
+                flash("Invalid sample selection.", "danger")
+                return redirect(url_for("predict"))
+            result, error = run_prediction(filepath, filepath.name)
+            if error:
+                flash(error, "danger")
+                return redirect(url_for("predict"))
+            return render_template("result.html", **result)
+
+        # Option 2: user uploaded their own file
         if "audio" not in request.files:
             flash("No file part in the request.", "danger")
             return redirect(request.url)
@@ -184,31 +217,30 @@ def predict():
         save_path = UPLOAD_DIR / filename
         file.save(save_path)
 
+        result, error = run_prediction(save_path, filename)
+
         try:
-            # extract features
-            X = extract_features_from_path(save_path)  # (1, MAX_SEQ, 1024)
-            if model is None:
-                flash("Model is not loaded. Please place the model in model/ folder.", "danger")
-                return redirect(request.url)
+            save_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
-            # predict
-            prob = float(model.predict(X, verbose=0).ravel()[0])
-            label = "Abnormal" if prob >= best_threshold else "Normal"
-
-            # clean up upload
-            try:
-                save_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-            return render_template("result.html", filename=filename, prob=prob, label=label, threshold=best_threshold)
-        except Exception as e:
-            # keep file for debugging (or remove depending on your preference)
-            flash(f"Error during prediction: {e}", "danger")
-            app.logger.exception("Prediction error")
+        if error:
+            flash(error, "danger")
             return redirect(request.url)
+        return render_template("result.html", **result)
 
-    return render_template("predict.html")
+    return render_template("predict.html", sample_groups=list_sample_audio())
+
+
+# -----------------------------
+# Serve bundled sample audio for in-browser preview
+# -----------------------------
+@app.route("/sample-audio/<path:relpath>")
+def sample_audio(relpath):
+    filepath = resolve_sample_path(relpath)
+    if filepath is None:
+        abort(404)
+    return send_from_directory(str(SAMPLE_DIR), relpath)
 
 
 # -----------------------------

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Claude Code session data
+.claude/
+
+# Local backup made while fixing the .keras model loading bug
+CODE/model/backup_original/
+
+# Runtime scratch (recreated automatically by app.py)
+CODE/uploads/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+CODE/.ipynb_checkpoints/
+
+# Editor/OS cruft
+.DS_Store

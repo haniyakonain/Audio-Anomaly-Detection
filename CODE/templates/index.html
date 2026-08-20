@@ -1,31 +1,38 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Fan Sound Anomaly Detection</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
+{% extends "base.html" %}
+{% block title %}FanSound AI: Machine Sound Anomaly Detection{% endblock %}
 
-<body>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/">Machine Sound </a>
-    <div class="navbar-nav">
-      <a class="nav-link active" href="/">Home</a>
-      <a class="nav-link" href="/register">Register</a>
-      <a class="nav-link" href="/login">Login</a>
+{% block content %}
+<section class="fs-hero">
+  <div class="fs-hero-inner">
+    <div class="fs-wave" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span>
     </div>
-  </div>
-</nav>
-
-<div class="container mt-5">
-    <h1 class="text-center">Machine Sound Anomaly Detection System</h1>
-    <p class="text-center mt-3">
-        Upload your Machine audio and detect whether it is Normal or Abnormal using AI.
+    <div class="fs-eyebrow mb-2">🎵 YAMNet + GRU · Audio ML</div>
+    <h1>🔊 Hear machine trouble before it breaks something.</h1>
+    <p>
+      Upload a machine audio clip and get an instant Normal / Abnormal call.
+      Or try it straight away with real sample recordings from the built-in library.
     </p>
-    <div class="text-center mt-4">
-        <a class="btn btn-primary btn-lg" href="/login">Get Started</a>
-    </div>
-</div>
+    <a class="btn fs-btn-grad" href="{{ url_for('predict') }}">🎙️ Start Detecting →</a>
+  </div>
+</section>
 
-</body>
-</html>
+<div class="fs-feature-grid">
+  <div class="fs-feature-card">
+    <div class="fs-feature-icon">📤</div>
+    <h3>Upload any clip</h3>
+    <p>Drag and drop a .wav, .mp3, .flac or .ogg recording and analyze it in seconds.</p>
+  </div>
+  <div class="fs-feature-card">
+    <div class="fs-feature-icon">🎧</div>
+    <h3>Sample audio library</h3>
+    <p>No file handy? Preview and predict on real normal/abnormal fan recordings bundled with the app.</p>
+  </div>
+  <div class="fs-feature-card">
+    <div class="fs-feature-icon">📊</div>
+    <h3>Model performance</h3>
+    <p>Check accuracy, loss, ROC curve and the confusion matrix on the Charts page.</p>
+  </div>
+</div>
+{% endblock %}
